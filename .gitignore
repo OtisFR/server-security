@@ -1,0 +1,39 @@
+# 備份與日誌文件
+*.log
+*.bak
+backups/
+*.swp
+*.swo
+*~
+
+# 臨時文件
+.tmp/
+*.tmp
+
+# 部署檔案
+/opt/server-security/
+
+# macOS 特定文件
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux 特定文件
+.directory
+Thumbs.db
+
+# IDE 特定文件
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# 敏感信息
+.env
+.env.local
+secrets/
+credentials
+
+# Bash 歷史記錄
+.bash_history
+.zsh_history

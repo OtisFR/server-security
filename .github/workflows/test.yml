@@ -1,0 +1,193 @@
+name: 腳本驗證與測試
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '*.sh'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '*.sh'
+
+jobs:
+  syntax-check:
+    name: Bash 語法驗證
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v3
+
+    - name: 安裝 ShellCheck
+      run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+    - name: 驗證 secure-deploy.sh 語法
+      run: bash -n secure-deploy.sh
+
+    - name: 驗證 setup_ssh_jail.sh 語法
+      run: bash -n setup_ssh_jail.sh
+
+    - name: 驗證 tailscale-installer.sh 語法
+      run: bash -n tailscale-installer.sh
+
+    - name: ShellCheck 靜態分析
+      run: |
+        echo "🔍 執行 ShellCheck 靜態分析..."
+        shellcheck -x --severity=warning secure-deploy.sh || true
+        shellcheck -x --severity=warning setup_ssh_jail.sh || true
+        shellcheck -x --severity=warning tailscale-installer.sh || true
+
+  lint-check:
+    name: 程式碼品質檢查
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v3
+
+    - name: 檢查行尾空白
+      run: |
+        echo "🔍 檢查行尾空白..."
+        if grep -r ' $' *.sh; then
+          echo "❌ 發現行尾空白，請移除"
+          exit 1
+        fi
+        echo "✅ 無行尾空白"
+
+    - name: 檢查 Tab 字符
+      run: |
+        echo "🔍 檢查 Tab 字符..."
+        if grep -r $'\t' *.sh; then
+          echo "❌ 發現 Tab 字符，請使用空格"
+          exit 1
+        fi
+        echo "✅ 無 Tab 字符"
+
+    - name: 檢查文件編碼
+      run: |
+        echo "🔍 檢查文件編碼..."
+        for file in *.sh; do
+          encoding=$(file -b --mime-encoding "$file")
+          if [[ "$encoding" != "utf-8" ]]; then
+            echo "❌ $file 編碼為 $encoding，應為 UTF-8"
+            exit 1
+          fi
+        done
+        echo "✅ 所有文件編碼正確"
+
+  version-check:
+    name: 版本一致性檢查
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v3
+
+    - name: 驗證 VERSION 檔案格式
+      run: |
+        echo "🔍 檢查 VERSION 檔案..."
+        if [[ ! -f VERSION ]]; then
+          echo "❌ VERSION 檔案不存在"
+          exit 1
+        fi
+        
+        VERSION=$(cat VERSION)
+        if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ VERSION 格式不正確: $VERSION"
+          echo "應為: X.Y.Z (如 1.0.0)"
+          exit 1
+        fi
+        
+        echo "✅ VERSION 檢查通過: $VERSION"
+
+  security-scan:
+    name: 安全掃描
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v3
+
+    - name: 檢查危險指令
+      run: |
+        echo "🔍 掃描危險指令..."
+        DANGEROUS_PATTERNS=(
+          "eval "
+          "chmod 777"
+          "sudo -u"
+        )
+        
+        for pattern in "${DANGEROUS_PATTERNS[@]}"; do
+          if grep -r "$pattern" *.sh 2>/dev/null; then
+            echo "⚠️ [警告] 發現潛在危險模式: $pattern"
+          fi
+        done
+        echo "✅ 安全掃描完成"
+
+    - name: 缺少 set -euo pipefail 檢查
+      run: |
+        echo "🔍 檢查 strict mode..."
+        for file in *.sh; do
+          if ! head -n 5 "$file" | grep -q "set -euo pipefail"; then
+            echo "⚠️ [警告] $file 缺少 'set -euo pipefail'"
+          fi
+        done
+        echo "✅ Strict mode 檢查完成"
+
+  readme-check:
+    name: 文檔完整性檢查
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@v3
+
+    - name: 驗證必要文件
+      run: |
+        echo "🔍 檢查必要文件..."
+        REQUIRED_FILES=("README.md" "VERSION" "CHANGELOG.md" ".gitignore")
+        
+        for file in "${REQUIRED_FILES[@]}"; do
+          if [[ ! -f "$file" ]]; then
+            echo "❌ 缺少必要文件: $file"
+            exit 1
+          fi
+          echo "✅ 檢測到: $file"
+        done
+
+    - name: 驗證 README 結構
+      run: |
+        echo "🔍 檢查 README 結構..."
+        REQUIRED_SECTIONS=("快速開始" "部署模式" "常用管理指令")
+        
+        for section in "${REQUIRED_SECTIONS[@]}"; do
+          if ! grep -q "$section" README.md; then
+            echo "⚠️ [警告] README 缺少 '$section' 章節"
+          else
+            echo "✅ 檢測到: $section"
+          fi
+        done
+
+  summary:
+    name: 測試摘要
+    runs-on: ubuntu-latest
+    needs: [syntax-check, lint-check, version-check, security-scan, readme-check]
+    if: always()
+    
+    steps:
+    - name: 生成測試報告
+      run: |
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✨ CI/CD 驗證完成"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "📋 測試結果："
+        echo "  - Bash 語法驗證: ${{ needs.syntax-check.result }}"
+        echo "  - 程式碼品質: ${{ needs.lint-check.result }}"
+        echo "  - 版本檢查: ${{ needs.version-check.result }}"
+        echo "  - 安全掃描: ${{ needs.security-scan.result }}"
+        echo "  - 文檔檢查: ${{ needs.readme-check.result }}"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
