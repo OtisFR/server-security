@@ -218,13 +218,14 @@ install_tailscale_basic() {
 }
 
 setup_tailscale_exit_node() {
-    echo "⚙️ [執行] 配置 Tailscale Exit Node 模式 (IPv4 專用)..."
+    echo "⚙️ [執行] 配置 Tailscale Exit Node 模式..."
     cat > /etc/sysctl.d/99-tailscale.conf <<'EOF'
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
 EOF
     sysctl -p /etc/sysctl.d/99-tailscale.conf &> /dev/null || true
-    echo "✅ [成功] IPv4 轉發已啟用"
+    echo "✅ [成功] IP 轉發已啟用"
 }
 
 do_tailscale_login() {
