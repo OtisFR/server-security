@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/OtisFR/server-security/main/secure-
 curl -fsSL -o secure-deploy.sh https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh
 
 # 2. 直接驗證並執行 (不需要 .sha256 檔案)
-echo "c5519956f88f4c628d005f9fc1ec4a621b504987be26d8c48b00f2551d2e8c19  secure-deploy.sh" | sha256sum -c - && sudo bash secure-deploy.sh
+echo "7be0333ec58cd4e31d30c50ed51da2ba111eb2bd09f8171cce3e29ea6b6ea6e0  secure-deploy.sh" | shasum -a 256 -c && sudo bash secure-deploy.sh
 ```
 
 ---
@@ -45,31 +45,32 @@ echo "c5519956f88f4c628d005f9fc1ec4a621b504987be26d8c48b00f2551d2e8c19  secure-d
 
 | 文件 | SHA256 | 驗證指令 |
 |------|--------|---------|
-| 文件 | SHA256 | 驗證指令 |
-|------|--------|---------|
-| **secure-deploy.sh** | `c5519956f88f4c628d005f9fc1ec4a621b504987be26d8c48b00f2551d2e8c19` | `shasum -a 256 secure-deploy.sh` |
+| **secure-deploy.sh** | `7be0333ec58cd4e31d30c50ed51da2ba111eb2bd09f8171cce3e29ea6b6ea6e0` | `shasum -a 256 secure-deploy.sh` |
 | **setup_ssh_jail.sh** | `2f99e98c57f90accb24af18cc33eb4fcba105c6f15e840115b16d38bb3a8d9d7` | `shasum -a 256 setup_ssh_jail.sh` |
 | **tailscale-installer.sh** | `3b121d79b6983ad60907b47cd885ad010c06d1d69e5f42b180d6a60b09fbcd09` | `shasum -a 256 tailscale-installer.sh` |
 
 ### 驗證下載的文件
 
 ```bash
+### 驗證下載的文件
+
+```bash
 # 驗證 secure-deploy.sh
-\#\ 驗證\ secure\-deploy\.sh\
-echo\ "c5519956f88f4c628d005f9fc1ec4a621b504987be26d8c48b00f2551d2e8c19\ \ secure\-deploy\.sh"\ \|\ shasum\ \-a\ 256\ \-c\
-\
-\#\ 驗證\ setup_ssh_jail\.sh\
-echo\ "2f99e98c57f90accb24af18cc33eb4fcba105c6f15e840115b16d38bb3a8d9d7\ \ setup_ssh_jail\.sh"\ \|\ shasum\ \-a\ 256\ \-c\
-\
-\#\ 驗證\ tailscale\-installer\.sh\
-echo\ "3b121d79b6983ad60907b47cd885ad010c06d1d69e5f42b180d6a60b09fbcd09\ \ tailscale\-installer\.sh"\ \|\ shasum\ \-a\ 256\ \-c\
-\
-\#\ 或一次驗證所有檔案\
-shasum\ \-a\ 256\ \-c\ <<EOF\
-c5519956f88f4c628d005f9fc1ec4a621b504987be26d8c48b00f2551d2e8c19\ \ secure\-deploy\.sh\
-2f99e98c57f90accb24af18cc33eb4fcba105c6f15e840115b16d38bb3a8d9d7\ \ setup_ssh_jail\.sh\
-3b121d79b6983ad60907b47cd885ad010c06d1d69e5f42b180d6a60b09fbcd09\ \ tailscale\-installer\.sh\
+echo "7be0333ec58cd4e31d30c50ed51da2ba111eb2bd09f8171cce3e29ea6b6ea6e0  secure-deploy.sh" | shasum -a 256 -c
+
+# 驗證 setup_ssh_jail.sh
+echo "2f99e98c57f90accb24af18cc33eb4fcba105c6f15e840115b16d38bb3a8d9d7  setup_ssh_jail.sh" | shasum -a 256 -c
+
+# 驗證 tailscale-installer.sh
+echo "3b121d79b6983ad60907b47cd885ad010c06d1d69e5f42b180d6a60b09fbcd09  tailscale-installer.sh" | shasum -a 256 -c
+
+# 或一次驗證所有檔案
+shasum -a 256 -c <<EOF
+7be0333ec58cd4e31d30c50ed51da2ba111eb2bd09f8171cce3e29ea6b6ea6e0  secure-deploy.sh
+2f99e98c57f90accb24af18cc33eb4fcba105c6f15e840115b16d38bb3a8d9d7  setup_ssh_jail.sh
+3b121d79b6983ad60907b47cd885ad010c06d1d69e5f42b180d6a60b09fbcd09  tailscale-installer.sh
 EOF
+```
 ```
 
 ---
