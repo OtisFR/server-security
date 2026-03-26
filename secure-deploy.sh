@@ -404,6 +404,10 @@ show_summary() {
     echo "     - 查看 sshd jail 狀態：sudo fail2ban-client status sshd"
     echo "     - 解封 IP：sudo fail2ban-client set sshd unbanip <IP>"
     echo "     - 白名單 IP（臨時）：sudo fail2ban-client set sshd addignoreip <IP>"
+    echo "     - 永久加入白名單："
+    echo "       1. 編輯設定檔：sudo nano /etc/fail2ban/jail.local"
+    echo "       2. 在 [DEFAULT] 區塊的 ignoreip 後面加上 IP (用空格隔開)"
+    echo "       3. 重啟服務：sudo systemctl restart fail2ban"
     echo "     - 重新啟動服務：sudo systemctl restart fail2ban"
     echo "  4) SSH 服務檢查："
     echo "     - 重啟 SSH：sudo systemctl restart ssh"
@@ -411,6 +415,9 @@ show_summary() {
     echo "  5) IPv6 管理："
     echo "     - 目前狀態：cat /proc/sys/net/ipv6/conf/all/disable_ipv6"
     echo "     - 重新載入內核設定：sudo sysctl --system"
+    echo "  6) 日誌監控："
+    echo "     - Fail2Ban 即時日誌：sudo tail -f /var/log/fail2ban.log"
+    echo "     - SSH 原始錯誤日誌：sudo tail -f /var/log/auth.log | grep sshd"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
