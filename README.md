@@ -30,9 +30,11 @@ curl -fsSL https://raw.githubusercontent.com/OtisFR/server-security/main/secure-
 ### 安全驗證版本（企業推薦）
 
 ```bash
-# 下載並驗證後執行
+# 1. 下載腳本
 curl -fsSL -o secure-deploy.sh https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh
-sha256sum -c secure-deploy.sh.sha256 && sudo bash secure-deploy.sh
+
+# 2. 直接驗證並執行 (不需要 .sha256 檔案)
+echo "ccaf85bf76674615f7c3c0020a5274517394d18aa101ce4c602923c5c813c57d  secure-deploy.sh" | sha256sum -c - && sudo bash secure-deploy.sh
 ```
 
 ---

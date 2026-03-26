@@ -44,7 +44,7 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] 部署開始" >> "$DEPLOY_LOG"
 # ============================================================================
 disable_ipv6_completely() {
     echo "[$(date '+%H:%M:%S')] 執行 IPv6 封禁作業..."
-    
+
     # 1. 系統核心層級禁用 IPv6
     cat > /etc/sysctl.d/99-disable-ipv6.conf <<'EOF'
 net.ipv6.conf.all.disable_ipv6 = 1
@@ -97,16 +97,16 @@ show_menu() {
 # ============================================================================
 setup_ufw_safe() {
     echo "[$(date '+%H:%M:%S')] 配置 UFW 防火牆（開放公網 SSH）..."
-    
+
     ufw default deny incoming > /dev/null 2>&1 || true
     ufw default allow outgoing > /dev/null 2>&1 || true
-    
+
     ufw allow 22/tcp > /dev/null 2>&1 || true
     echo "✅ [成功] SSH (port 22) 已開放 (所有 IPv4 來源)"
-    
+
     ufw allow 41641/udp > /dev/null 2>&1 || true
     echo "✅ [成功] Tailscale P2P (port 41641 UDP) 已開放"
-    
+
     ufw --force enable > /dev/null 2>&1 || { echo "❌ [錯誤] UFW 啟用失敗"; exit 1; }
     echo "✅ [成功] UFW 已啟用"
 }
@@ -128,11 +128,11 @@ setup_ufw_strict() {
     fi
 
     echo "[$(date '+%H:%M:%S')] 配置 UFW 防火牆（零信任嚴格模式）..."
-    
+
     # 設置默認規則（優先執行）
     ufw default deny incoming > /dev/null 2>&1 || true
     ufw default allow outgoing > /dev/null 2>&1 || true
-    
+
     # 清除現有開放的公網 SSH 規則
     ufw delete allow 22/tcp >/dev/null 2>&1 || true
     ufw delete allow ssh >/dev/null 2>&1 || true
@@ -142,11 +142,11 @@ setup_ufw_strict() {
     ufw allow in on tailscale0 to any port 22 > /dev/null 2>&1 || true
     ufw allow from 100.64.0.0/10 to any port 22 proto tcp > /dev/null 2>&1 || true
     echo "✅ [成功] SSH (port 22) 已限制為【僅限 Tailscale 100.64.0.0/10 網段】連入"
-    
+
     # 允許 Tailscale 自身穿透通訊
     ufw allow 41641/udp > /dev/null 2>&1 || true
     echo "✅ [成功] Tailscale P2P (port 41641 UDP) 已開放"
-    
+
     ufw --force enable > /dev/null 2>&1 || { echo "❌ [錯誤] UFW 啟用失敗"; exit 1; }
     echo "✅ [成功] UFW 已啟用 (零信任模式獨效)"
 }
@@ -157,44 +157,44 @@ setup_ufw_strict() {
 install_tailscale_basic() {
     echo ""
     echo "[$(date '+%H:%M:%S')] 開始安裝 Tailscale..."
-    
+
     if command -v tailscale &> /dev/null; then
         TAILSCALE_VER=$(tailscale version 2>/dev/null | head -1 || echo "未知版本")
         echo "⚠️ [警告] Tailscale 已安裝 (版本: $TAILSCALE_VER)"
-        
+
         systemctl enable tailscaled > /dev/null 2>&1 || true
         systemctl start tailscaled > /dev/null 2>&1 || true
-        
+
         read -p "✅ [成功] 是否重新安裝/更新？ (y/n): " do_reinstall
         if [[ "$do_reinstall" != "y" && "$do_reinstall" != "Y" ]]; then
             echo "⚡️ [跳過] 跳過 Tailscale 安裝程序"
             return
         fi
     fi
-    
+
     apt-get update &> /dev/null || true
     apt-get install -y curl &> /dev/null || { echo "❌ 依賴安裝失敗"; exit 1; }
-    
+
     echo "[$(date '+%H:%M:%S')] 下載 Tailscale 安裝腳本..."
     TEMP_INSTALL=$(mktemp) || { echo "❌ 無法建立臨時檔案"; exit 1; }
     trap "rm -f '$TEMP_INSTALL'" EXIT
-    
+
     if ! curl -fsSL -o "$TEMP_INSTALL" --max-time 60 https://tailscale.com/install.sh; then
         echo "❌ Tailscale 下載失敗，請檢查網路連線"
         exit 1
     fi
-    
+
     if [[ ! -s "$TEMP_INSTALL" ]]; then
         echo "❌ 下載的檔案為空或不完整"
         exit 1
     fi
-    
+
     if ! sh "$TEMP_INSTALL" &> /dev/null; then
         echo "❌ Tailscale 安裝失敗"
         exit 1
     fi
     echo "✅ Tailscale 已安裝"
-    
+
     systemctl enable tailscaled > /dev/null 2>&1 || true
     systemctl start tailscaled > /dev/null 2>&1 || true
     sleep 1
@@ -206,16 +206,16 @@ install_tailscale_basic() {
 setup_tailscale_exit_node() {
     echo ""
     echo "[$(date '+%H:%M:%S')] 配置 Tailscale Exit Node 模式 (IPv4 專用)..."
-    
+
     cat > /etc/sysctl.d/99-tailscale.conf <<'EOF'
 # Tailscale Exit Node 核心轉發設定 (僅 IPv4)
 net.ipv4.ip_forward = 1
 net.ipv4.conf.all.accept_redirects = 0
 EOF
-    
+
     sysctl -p /etc/sysctl.d/99-tailscale.conf &> /dev/null || true
     echo "✅ [成功] IPv4 轉發已啟用"
-    
+
     if [[ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" == "1" ]]; then
         echo "✅ [成功] IPv4 轉發驗證成功"
     else
@@ -228,17 +228,17 @@ EOF
 # ============================================================================
 do_tailscale_login() {
     local mode=$1  # "basic" 或 "exit-node"
-    
+
     echo ""
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║           【重要】請完成 Tailscale 認證                       ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo ""
-    
+
     if tailscale ip -4 &> /dev/null; then
         local current_ip=$(tailscale ip -4)
         echo "✅ [成功] Tailscale 已登入 (IP: $current_ip)"
-        
+
         if [[ "$mode" == "exit-node" ]]; then
             echo ""
             read -p "✅ [成功] 是否確認啟用/覆寫 Exit Node 設定？此操作會重新設定網路 (y/n): " confirm
@@ -251,20 +251,20 @@ do_tailscale_login() {
             return
         fi
     fi
-    
+
     echo "⏳ 正在啟動 Tailscale 登入流程..."
     echo "📱 一個登入網址即將出現，請複製到瀏覽器中完成認證"
     echo ""
-    
+
     sleep 2
-    
+
     if [[ "$mode" == "exit-node" ]]; then
         echo "⚡️ [反赫] 此模式將設定本機為 Exit Node..."
         tailscale up --advertise-exit-node --snat-subnet-routes=false 2>&1 || true
     else
         tailscale up 2>&1 || true
     fi
-    
+
     echo ""
     echo "✅ [成功] 登入流程完成！"
     sleep 1
@@ -275,13 +275,13 @@ do_tailscale_login() {
 # ============================================================================
 finalize_setup() {
     local mode=$1
-    
+
     echo ""
     echo "[$(date '+%H:%M:%S')] 執行最終配置..."
-    
+
     tailscale set --auto-update > /dev/null 2>&1 || true
     echo "✅ [成功] 自動更新已啟用"
-    
+
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 部署完成 (模式: $mode)" >> "$DEPLOY_LOG"
 }
 
@@ -290,7 +290,7 @@ finalize_setup() {
 # ============================================================================
 show_summary() {
     local mode=$1
-    
+
     echo ""
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║                  🎉 部署完成！                                ║"
@@ -299,20 +299,20 @@ show_summary() {
     echo "📋 部署摘要："
     echo "   安裝模式: $mode"
     echo ""
-    
+
     echo "⚙️  服務狀態："
     if systemctl is-active --quiet tailscaled; then
         echo "   • Tailscale: ✅ [成功] 運行中 (IP: $(tailscale ip -4 2>/dev/null || echo "N/A"))"
     else
         echo "   • Tailscale: ❌ [錯誤] 未運行"
     fi
-    
+
     if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
         echo "   • UFW 防火牆: ✅ [成功] 啟用 (IPv6 已停用)"
     else
         echo "   • UFW 防火牆: ⚡️ [跳過] 未啟用"
     fi
-    
+
     echo ""
     case "$mode" in
         "零信任安全版" | "零信任 Exit Node 版")
@@ -320,7 +320,7 @@ show_summary() {
             echo "   未來請使用 Tailscale 內網 IP ($(tailscale ip -4 2>/dev/null)) 來連線此伺服器。"
             ;;
     esac
-    
+
     if [[ "$mode" == *"Exit Node"* ]]; then
         echo ""
         echo "⚡️ [反赫] Exit Node 後續步驟（重要）:"
@@ -328,7 +328,7 @@ show_summary() {
         echo "   2. 找到本機，點擊 '...' 選單"
         echo "   3. 啟用『Use as exit node』選項"
     fi
-    
+
     echo ""
     echo "📝 部署日誌已保存: $DEPLOY_LOG"
     echo ""
@@ -339,14 +339,14 @@ show_summary() {
 # ============================================================================
 main() {
     show_menu
-    
+
     # 執行選項前，先徹底禁用 IPv6
     case "${CHOICE:-}" in
         1|2|3|4|5)
             disable_ipv6_completely
             ;;
     esac
-    
+
     case "${CHOICE:-}" in
         1)
             install_tailscale_basic
