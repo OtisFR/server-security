@@ -1,3 +1,8 @@
+這是一份為您加上了最後 `|| true` 防護網的終極完美版本。所有的 `pipefail` 潛在陷阱皆已修復，現在這支腳本已經具備了最高級別的容錯性與穩定度。
+
+請將以下內容存為 `secure-deploy.sh`：
+
+```bash
 #!/bin/bash
 
 set -euo pipefail  # 嚴格模式：任何錯誤都會停止執行
@@ -178,12 +183,12 @@ setup_ufw_strict() {
     ufw delete allow 22/tcp >/dev/null 2>&1 || true
     ufw delete allow ssh >/dev/null 2>&1 || true
 
-    # 嘗試抓取當前 IP
+    # 嘗試抓取當前 IP，加上 || true 防範 pipefail
     local CURRENT_SSH_IP=""
     if [ -n "${SSH_CLIENT:-}" ]; then
         CURRENT_SSH_IP=$(echo "$SSH_CLIENT" | awk '{print $1}')
     else
-        CURRENT_SSH_IP=$(who am i 2>/dev/null | awk '{print $NF}' | tr -d '()')
+        CURRENT_SSH_IP=$(who am i 2>/dev/null | awk '{print $NF}' | tr -d '()' || true)
     fi
 
     # 驗證取得的字串是否真的是合法 IP (過濾掉 tty 本機登入的雜訊)
@@ -243,8 +248,8 @@ EOF
     sysctl -p /etc/sysctl.d/99-tailscale.conf &> /dev/null || true
     log "✅ [成功] 系統核心 IPv4 轉發已啟用"
 
-    # 2. 自動抓取對外網卡名稱
-    local DEFAULT_IFACE=$(ip route show default | awk '/default/ {print $5}' | head -n 1)
+    # 2. 自動抓取對外網卡名稱，加上 || true 防範 pipefail
+    local DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '/default/ {print $5}' | head -n 1 || true)
     
     if [ -z "$DEFAULT_IFACE" ]; then
         log "⚠️ [警告] 無法自動偵測對外網卡，UFW NAT 轉發可能配置失敗，需手動處理。"
@@ -329,11 +334,12 @@ setup_fail2ban() {
     
     WHITELIST_ARRAY=("127.0.0.1/8" "100.64.0.0/10" "::1")
     
+    # 加上 || true 防範 pipefail
     local CURRENT_SSH_IP=""
     if [ -n "${SSH_CLIENT:-}" ]; then
         CURRENT_SSH_IP=$(echo "$SSH_CLIENT" | awk '{print $1}')
     else
-        CURRENT_SSH_IP=$(who am i 2>/dev/null | awk '{print $NF}' | tr -d '()')
+        CURRENT_SSH_IP=$(who am i 2>/dev/null | awk '{print $NF}' | tr -d '()' || true)
     fi
 
     if [ -n "$CURRENT_SSH_IP" ] && validate_ip "$CURRENT_SSH_IP"; then
@@ -427,7 +433,9 @@ show_summary() {
         echo "   - Tailscale: ❌ [未運行]"
     fi
     echo "   - Fail2Ban:  $(systemctl is-active fail2ban 2>/dev/null >/dev/null && echo '✅ [運行中]' || echo '❌ [未安裝/未運行]')"
-    local ufw_status="$(ufw status 2>/dev/null | awk -F: '/[sS]tatus/ { gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit }')"
+    
+    # 加上 || true 防範 pipefail
+    local ufw_status="$(ufw status 2>/dev/null | awk -F: '/[sS]tatus/ { gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit }' || true)"
     if [ -z "$ufw_status" ]; then
         ufw_status="未知/未啟用"
     fi
@@ -514,3 +522,4 @@ main() {
 }
 
 main
+```
