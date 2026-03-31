@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # ============================================================================
-# 自動計算腳本校驗和並更新 README.md (macOS 本地版本 + Git 互動)
+# 自動計算腳本校驗和並更新 README.md (macOS 專用穩定版)
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +24,7 @@ done
 echo "📝 計算 SHA256 校驗和..."
 echo ""
 
-# 計算校驗和並存儲 (macOS 兼容：不使用關聯數組)
+# 計算校驗和並存儲
 CHECKSUMS_LIST=()
 for file in "${FILES[@]}"; do
     checksum=$(cd "$SCRIPT_DIR" && shasum -a 256 "$file" | awk '{print $1}')
@@ -47,41 +47,15 @@ get_checksum() {
 echo ""
 echo "📄 更新 README.md 和 checksums.sha256..."
 
-# 生成校驗和表格
-TABLE_MD=$(cat <<'TABLE_END'
+# 生成校驗和表格內容 (存入變數)
+NEW_TABLE=$(cat <<EOF
 | 文件 | SHA256 | 驗證指令 |
 |------|--------|---------|
-TABLE_END
-)
-
-for file in "${FILES[@]}"; do
+$(for file in "${FILES[@]}"; do
     checksum=$(get_checksum "$file")
-    TABLE_MD+="
-| **$file** | \`${checksum}\` | \`shasum -a 256 $file\` |"
-done
-
-# 生成驗證命令區塊
-read -r SECURE_DEPLOY_CHECKSUM < <(get_checksum "secure-deploy.sh"; echo)
-read -r SETUP_SSH_CHECKSUM < <(get_checksum "setup_ssh_jail.sh"; echo)
-read -r TAILSCALE_CHECKSUM < <(get_checksum "tailscale-installer.sh"; echo)
-
-VERIFY_CMD=$(cat <<VERIFY_END
-# 驗證 secure-deploy.sh
-echo "${SECURE_DEPLOY_CHECKSUM}  secure-deploy.sh" | shasum -a 256 -c
-
-# 驗證 setup_ssh_jail.sh
-echo "${SETUP_SSH_CHECKSUM}  setup_ssh_jail.sh" | shasum -a 256 -c
-
-# 驗證 tailscale-installer.sh
-echo "${TAILSCALE_CHECKSUM}  tailscale-installer.sh" | shasum -a 256 -c
-
-# 或一次驗證所有檔案
-shasum -a 256 -c <<EOF
-${SECURE_DEPLOY_CHECKSUM}  secure-deploy.sh
-${SETUP_SSH_CHECKSUM}  setup_ssh_jail.sh
-${TAILSCALE_CHECKSUM}  tailscale-installer.sh
+    echo "| **$file** | \`${checksum}\` | \`shasum -a 256 $file\` |"
+done)
 EOF
-VERIFY_END
 )
 
 # 確保 README.md 存在
@@ -90,33 +64,31 @@ if [ ! -f "$README_FILE" ]; then
     exit 1
 fi
 
-echo "🔄 README.md 保持不變（校驗和已在表中）"
+# 更新 README.md 邏輯 (改用 awk 避免 sed 錯誤)
+if grep -q "" "$README_FILE"; then
+    echo "🔄 偵測到現有區塊，正在更新 README.md..."
+    # 使用 awk 將區塊內容替換，並輸出到臨時文件
+    awk -v new_table="$NEW_TABLE" '
+        // { print new_table; skip=1; next }
+        // { skip=0; next }
+        !skip { print }
+    ' "$README_FILE" > "$README_FILE.tmp" && mv "$README_FILE.tmp" "$README_FILE"
+    echo "✅ [成功] README.md 區塊已同步"
+else
+    echo "➕ 未發現區塊，正在將校驗和追加至 README.md 末尾..."
+    echo -e "\n$NEW_TABLE" >> "$README_FILE"
+    echo "✅ [成功] 已追加新區塊"
+fi
 
-
-echo ""
-echo "✅ [成功] README.md 已更新！"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📊 校驗和摘要："
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# 生成 .sha256 檔案
+SHA256_FILE="$SCRIPT_DIR/checksums.sha256"
+: > "$SHA256_FILE"
 for item in "${CHECKSUMS_LIST[@]}"; do
     file="${item%%:*}"
     checksum="${item##*:}"
-    echo "$checksum  $file"
+    echo "$checksum  $file" >> "$SHA256_FILE"
 done
-
-# 生成 .sha256 檔案 (macOS 使用 shasum)
-echo "📝 生成 checksums.sha256 驗證檔..."
-SHA256_FILE="$SCRIPT_DIR/checksums.sha256"
-{
-    for item in "${CHECKSUMS_LIST[@]}"; do
-        file="${item%%:*}"
-        checksum="${item##*:}"
-        # shasum 格式：checksum  filename (兩個空格)
-        echo "$checksum  $file"
-    done
-} > "$SHA256_FILE"
-echo "✅ 已建立: $SHA256_FILE"
+echo "✅ 已更新驗證檔: $SHA256_FILE"
 
 # ============================================================================
 # Git 互動操作
@@ -133,105 +105,87 @@ echo "🔧 Git 操作"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# 檢查 Git 狀態
 cd "$SCRIPT_DIR"
 GIT_STATUS=$(git status --porcelain 2>/dev/null || echo "")
 
 if [ -z "$GIT_STATUS" ]; then
-    echo "✅ [信息] 工作目錄清潔，無更改"
-    exit 0
+    echo "✅ [信息] 工作目錄清潔，無新變更需要 Commit"
+    # 如果只是想單純 Push，可以繼續執行
+else
+    echo "📝 檢測到的本地更改："
+    echo "$GIT_STATUS" | sed 's/^/   /'
+    echo ""
 fi
 
-echo "📝 檢測到的更改："
-echo "$GIT_STATUS" | sed 's/^/   /'
-echo ""
-
-# 詢問是否進行 Git 操作
 read -p "💬 [輸入] 是否要進行 Git 操作？ (y/n): " git_proceed
 if [[ ! "$git_proceed" =~ ^[Yy]$ ]]; then
     echo "⏭️ [跳過] 已取消 Git 操作"
     exit 0
 fi
 
-# Stage 更改
-echo "📍 Stage 更改..."
-git add README.md checksums.sha256 secure-deploy.sh setup_ssh_jail.sh tailscale-installer.sh 2>/dev/null || true
-echo "✅ 文件已加入 staging 區"
-
 echo ""
 echo "🔀 選擇 Git 操作方式："
-echo "  1) 直接推到 GitHub (git push)"
-echo "  2) 先合併分支 (git merge) 再推送 (需指定分支)"
+echo "  1) 直接推送 (git push)"
+echo "  2) 合併分支後推送 (git merge)"
 echo "  3) 僅 Commit，不推送"
+echo "  4) 🔥 強制覆蓋 GitHub (以本地檔案為準，完全覆蓋遠端)"
 echo "  q) 取消"
 echo ""
-read -p "💬 [輸入] 請選擇 [1/2/3/q]: " git_choice
+read -p "💬 [輸入] 請選擇 [1/2/3/4/q]: " git_choice
+
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 case "$git_choice" in
     1)
-        echo ""
-        echo "⏳ 準備推送到 GitHub..."
+        git add -A
         read -p "💬 [輸入] 提交訊息 (預設: 'chore: update checksums'): " commit_msg
         commit_msg="${commit_msg:-chore: update checksums}"
-        
-        git commit -m "$commit_msg" || { echo "❌ Commit 失敗"; exit 1; }
-        echo "✅ Commit 已建立"
-        
-        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-        echo "🚀 推送到分支: $CURRENT_BRANCH"
-        git push origin "$CURRENT_BRANCH" || { echo "❌ Push 失敗"; exit 1; }
-        echo "✅ [成功] 已推送到 GitHub"
+        git commit -m "$commit_msg" || echo "ℹ️ 無新變更可提交"
+        git push origin "$CURRENT_BRANCH"
         ;;
-    
     2)
-        echo ""
-        echo "🔀 輸入要合併的來源分支 (預設值: develop):"
-        read -p "💬 [輸入] 分支名稱: " source_branch
+        read -p "💬 [輸入] 來源分支 (預設: develop): " source_branch
         source_branch="${source_branch:-develop}"
-        
-        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-        echo "⏳ 準備從 $source_branch 合併到 $CURRENT_BRANCH..."
-        
-        read -p "💬 [輸入] 提交訊息 (預設: 'merge: update checksums from $source_branch'): " commit_msg
+        git add -A
+        read -p "💬 [輸入] 提交訊息: " commit_msg
         commit_msg="${commit_msg:-merge: update checksums from $source_branch}"
-        
-        git commit -m "$commit_msg" || { echo "❌ Commit 失敗"; exit 1; }
-        echo "✅ Commit 已建立"
-        
-        git merge "$source_branch" --no-edit 2>/dev/null || {
-            echo "⚠️ [警告] Merge 失敗或產生衝突，請手動處理"
-            echo "💡 提示: 使用 'git merge --abort' 或 'git merge --continue' 來解決"
-            exit 1
-        }
-        echo "✅ 分支已合併"
-        
-        echo "🚀 推送到分支: $CURRENT_BRANCH"
-        git push origin "$CURRENT_BRANCH" || { echo "❌ Push 失敗"; exit 1; }
-        echo "✅ [成功] 已推送到 GitHub"
+        git commit -m "$commit_msg" || echo "ℹ️ 無新變更"
+        git merge "$source_branch" --no-edit
+        git push origin "$CURRENT_BRANCH"
         ;;
-    
     3)
-        echo ""
-        read -p "💬 [輸入] 提交訊息 (預設: 'chore: update checksums'): " commit_msg
+        git add -A
+        read -p "💬 [輸入] 提交訊息: " commit_msg
         commit_msg="${commit_msg:-chore: update checksums}"
-        
-        git commit -m "$commit_msg" || { echo "❌ Commit 失敗"; exit 1; }
-        echo "✅ [成功] Commit 已建立，但尚未推送"
-        echo "💡 提示: 使用 'git push origin $(git rev-parse --abbrev-ref HEAD)' 手動推送"
+        git commit -m "$commit_msg" || echo "ℹ️ 無新變更"
+        echo "✅ [成功] Commit 已建立"
         ;;
-    
+    4)
+        echo ""
+        echo "🚨 [警告] 即將進行強制推送 (Force Push)！"
+        read -p "⚠️  你確定要完全以本地端覆蓋遠端 GitHub 嗎？ (y/n): " confirm_force
+        if [[ "$confirm_force" =~ ^[Yy]$ ]]; then
+            git add -A
+            read -p "💬 [輸入] 提交訊息: " commit_msg
+            commit_msg="${commit_msg:-chore: force sync local state to remote}"
+            git commit -m "$commit_msg" || echo "ℹ️ 無新變更"
+            echo "🚀 強制推送到分支: $CURRENT_BRANCH ..."
+            git push origin "$CURRENT_BRANCH" --force
+            echo "✅ [成功] GitHub 已被覆蓋"
+        else
+            echo "⏭️ 操作取消"
+        fi
+        ;;
     q)
-        echo "⏭️ [已取消] Git 操作已中止"
         exit 0
         ;;
-    
     *)
-        echo "❌ [錯誤] 無效選項"
+        echo "❌ 無效選項"
         exit 1
         ;;
 esac
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✨ 校驗和更新與 Git 操作完成！"
+echo "✨ 任務完成！"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

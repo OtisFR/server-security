@@ -385,3 +385,11 @@ Created with ❤️ for server security
 ## 📞 支援
 
 遇到問題？查看 [Troubleshooting](#-故障排除) 或提交 Issue
+
+<!-- CHECKSUMS START -->
+| 文件 | SHA256 | 驗證指令 |
+|------|--------|---------|
+| **secure-deploy.sh** | `344fbba301dcb7436711782110d971197cd704ca792b22bd99941945b5eb62ff` | `shasum -a 256 secure-deploy.sh` |
+| **setup_ssh_jail.sh** | `2f99e98c57f90accb24af18cc33eb4fcba105c6f15e840115b16d38bb3a8d9d7` | `shasum -a 256 setup_ssh_jail.sh` |
+| **tailscale-installer.sh** | `3b121d79b6983ad60907b47cd885ad010c06d1d69e5f42b180d6a60b09fbcd09` | `shasum -a 256 tailscale-installer.sh` |
+<!-- CHECKSUMS END -->
