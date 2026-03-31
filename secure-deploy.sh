@@ -13,7 +13,7 @@ set -euo pipefail  # 嚴格模式：任何錯誤都會停止執行
 # ============================================================================
 
 # 確保以 root 權限執行
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
   echo "❌ [錯誤] 請使用 sudo 執行此腳本"
   exit 1
 fi
@@ -75,7 +75,7 @@ disable_ipv6_completely() {
     read -p "💬 [輸入] 是否徹底禁用 IPv6 以減少潛在攻擊面？ (y/n): " disable_ipv6_choice
     if [[ "$disable_ipv6_choice" =~ ^[Yy]$ ]]; then
         log "⚙️ [執行] 執行 IPv6 封禁作業..."
-        
+
         # 1. 系統核心層級禁用
         cat > /etc/sysctl.d/99-disable-ipv6.conf <<'EOF'
 net.ipv6.conf.all.disable_ipv6 = 1
@@ -133,7 +133,7 @@ show_menu() {
 install_base_dependencies() {
     log "⚙️ [執行] 檢查並安裝基礎依賴 (UFW, SSH)..."
     apt-get update &> /dev/null || true
-    
+
     if ! command -v ufw &> /dev/null; then
         apt-get install -y ufw &> /dev/null || { log "❌ [錯誤] UFW 安裝失敗，請檢查網路狀態"; exit 1; }
     fi
@@ -149,16 +149,16 @@ install_base_dependencies() {
 # ============================================================================
 setup_ufw_safe() {
     log "⚙️ [執行] 配置 UFW 防火牆（開放公網 SSH）..."
-    
+
     ufw default deny incoming > /dev/null 2>&1 || true
     ufw default allow outgoing > /dev/null 2>&1 || true
-    
+
     ufw allow 22/tcp > /dev/null 2>&1 || true
     log "✅ [成功] SSH (port 22) 已開放 (所有來源)"
-    
+
     ufw allow 41641/udp > /dev/null 2>&1 || true
     log "✅ [成功] Tailscale P2P (port 41641 UDP) 已開放"
-    
+
     ufw --force enable > /dev/null 2>&1 || { log "❌ [錯誤] UFW 啟用失敗"; exit 1; }
     log "✅ [成功] UFW 已啟用"
 }
@@ -179,7 +179,7 @@ setup_ufw_strict() {
     log "⚙️ [執行] 配置 UFW 防火牆（零信任嚴格模式）..."
     ufw default deny incoming > /dev/null 2>&1 || true
     ufw default allow outgoing > /dev/null 2>&1 || true
-    
+
     ufw delete allow 22/tcp >/dev/null 2>&1 || true
     ufw delete allow ssh >/dev/null 2>&1 || true
 
@@ -204,7 +204,7 @@ setup_ufw_strict() {
     ufw allow in on tailscale0 to any port 22 > /dev/null 2>&1 || true
     ufw allow from 100.64.0.0/10 to any port 22 proto tcp > /dev/null 2>&1 || true
     log "✅ [成功] SSH (port 22) 已限制為【僅限 Tailscale 網段】連入"
-    
+
     ufw allow 41641/udp > /dev/null 2>&1 || true
     ufw --force enable > /dev/null 2>&1 || { log "❌ [錯誤] UFW 啟用失敗"; exit 1; }
     log "✅ [成功] UFW 已啟用 (零信任模式生效)"
@@ -239,7 +239,7 @@ install_tailscale_basic() {
 
 setup_tailscale_exit_node() {
     log "⚙️ [執行] 配置 Tailscale Exit Node 模式 (IPv4 轉發與 UFW NAT 配置)..."
-    
+
     # 1. 系統核心開啟 IPv4 轉發
     cat > /etc/sysctl.d/99-tailscale.conf <<'EOF'
 net.ipv4.ip_forward = 1
@@ -250,12 +250,12 @@ EOF
 
     # 2. 自動抓取對外網卡名稱，加上 || true 防範 pipefail
     local DEFAULT_IFACE=$(ip route show default 2>/dev/null | awk '/default/ {print $5}' | head -n 1 || true)
-    
+
     if [ -z "$DEFAULT_IFACE" ]; then
         log "⚠️ [警告] 無法自動偵測對外網卡，UFW NAT 轉發可能配置失敗，需手動處理。"
     else
         log "✅ [成功] 偵測到主要對外網卡: $DEFAULT_IFACE"
-        
+
         # 3. 修改 UFW 預設轉發策略
         if grep -q "^DEFAULT_FORWARD_POLICY=" /etc/default/ufw; then
             sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
@@ -292,7 +292,7 @@ do_tailscale_login() {
     echo " 🔐 [安全] 請完成 Tailscale 認證"
     echo "================================================================"
     echo ""
-    
+
     if tailscale ip -4 &> /dev/null; then
         log "✅ [成功] Tailscale 已登入 (IP: $(tailscale ip -4))"
         if [[ "$mode" == "exit-node" ]]; then
@@ -300,19 +300,19 @@ do_tailscale_login() {
         fi
         return
     fi
-    
+
     log "⏳ [等待] 正在啟動 Tailscale 登入流程..."
     log "📱 [操作] 請複製下方網址到瀏覽器中完成認證："
     echo ""
     sleep 2
-    
+
     # 嚴格捕捉啟動錯誤，移除 || true
     if [[ "$mode" == "exit-node" ]]; then
         tailscale up --advertise-exit-node --snat-subnet-routes=false || { log "❌ [錯誤] Tailscale 啟動失敗"; exit 1; }
     else
         tailscale up || { log "❌ [錯誤] Tailscale 啟動失敗"; exit 1; }
     fi
-    
+
     # 嚴格驗證是否成功取得 IP
     if tailscale ip -4 &> /dev/null; then
         log "✅ [成功] 登入流程完成！取得 IP: $(tailscale ip -4)"
@@ -331,9 +331,9 @@ setup_fail2ban() {
     echo "================================================================"
     echo " 🛡️ [安全] 配置 Fail2Ban SSH 防禦與白名單"
     echo "================================================================"
-    
+
     WHITELIST_ARRAY=("127.0.0.1/8" "100.64.0.0/10" "::1")
-    
+
     # 加上 || true 防範 pipefail
     local CURRENT_SSH_IP=""
     if [ -n "${SSH_CLIENT:-}" ]; then
@@ -433,7 +433,7 @@ show_summary() {
         echo "   - Tailscale: ❌ [未運行]"
     fi
     echo "   - Fail2Ban:  $(systemctl is-active fail2ban 2>/dev/null >/dev/null && echo '✅ [運行中]' || echo '❌ [未安裝/未運行]')"
-    
+
     # 加上 || true 防範 pipefail
     local ufw_status="$(ufw status 2>/dev/null | awk -F: '/[sS]tatus/ { gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2; exit }' || true)"
     if [ -z "$ufw_status" ]; then
@@ -441,7 +441,7 @@ show_summary() {
     fi
     echo "   - UFW 防火牆:  $ufw_status"
     echo "   - SSH 服務:  $(systemctl is-active ssh >/dev/null && echo '✅ [運行中]' || echo '❌ [未運行]')"
-    
+
     echo ""
     case "$mode" in
         "零信任安全版" | "零信任 Exit Node 版")
@@ -449,7 +449,7 @@ show_summary() {
             echo "   未來請務必使用 Tailscale 內網 IP ($(tailscale ip -4 2>/dev/null)) 連線此伺服器。"
             ;;
     esac
-    
+
     if [[ "$mode" == *"Exit Node"* ]]; then
         echo ""
         echo "🌍 [網路] Exit Node 後續步驟（重要）："
@@ -457,7 +457,7 @@ show_summary() {
         echo "   2. 找到本機，點擊 '...' 選單"
         echo "   3. 啟用『Use as exit node』選項"
     fi
-    
+
     echo ""
     echo "🔍 [指令] 常用防護管理指令"
     echo "   - 查看 Fail2Ban 封鎖名單: sudo fail2ban-client status sshd"
@@ -471,7 +471,7 @@ show_summary() {
 # ============================================================================
 main() {
     show_menu
-    
+
     case "${CHOICE:-}" in
         1|2|3|4|5)
             disable_ipv6_completely
@@ -480,7 +480,7 @@ main() {
         q|Q) log "✋ [中止] 已取消安裝"; exit 0 ;;
         *) log "❌ [錯誤] 無效選項，退出"; exit 1 ;;
     esac
-    
+
     case "${CHOICE:-}" in
         1)
             install_tailscale_basic

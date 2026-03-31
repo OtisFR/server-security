@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 檢查是否為 root 權限
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
   echo "❌ 請使用 sudo 或 root 權限執行此腳本。"
   exit 1
 fi

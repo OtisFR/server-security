@@ -3,7 +3,7 @@
 set -euo pipefail  # 嚴格模式：任何錯誤都會停止執行
 
 # 確保以 root 權限執行
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
   echo "❌ [錯誤] 請使用 sudo 執行此腳本"
   exit 1
 fi
@@ -40,7 +40,7 @@ validate_ip() {
     local ip=$1
     local ipv4_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$"
     local ipv6_regex="^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(/[0-9]{1,3})?$"
-    
+
     if [[ $ip =~ $ipv4_regex ]] || [[ $ip =~ $ipv6_regex ]]; then
         # 驗證 IPv4 段
         if [[ $ip =~ $ipv4_regex ]]; then
