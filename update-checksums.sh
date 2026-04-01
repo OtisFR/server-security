@@ -12,6 +12,7 @@ GIT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --git-dir 2>/dev/null)" && GIT_DIR="$(
 
 # 要檢查的文件
 FILES=("secure-deploy.sh" "setup_ssh_jail.sh" "tailscale-installer.sh")
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/OtisFR/server-security/main"
 
 # 檢查所有文件是否存在
 for file in "${FILES[@]}"; do
@@ -47,13 +48,27 @@ get_checksum() {
 echo ""
 echo "📄 更新 README.md 和 checksums.sha256..."
 
-# 生成校驗和表格內容 (存入變數)
-NEW_TABLE=$(cat <<EOF
-| 文件 | SHA256 | 驗證指令 |
-|------|--------|---------|
+# 取得 secure-deploy.sh 的最新 checksum
+SECURE_CS=$(get_checksum "secure-deploy.sh")
+
+# 生成要寫入的 Markdown 內容 (包含標籤、One-liner 區塊與表格)
+# 注意：使用 HTML 註解作為替換的定位點
+NEW_MARKDOWN=$(cat <<EOF
+### 🛡️ 安全驗證版本（企業推薦）
+
+\`\`\`bash
+# 下載、驗證、執行並自動銷毀 (One-liner 複製貼上即可)
+curl -fsSL -o /tmp/secure-deploy.sh $GITHUB_RAW_BASE/secure-deploy.sh && \\
+echo "$SECURE_CS  /tmp/secure-deploy.sh" | shasum -a 256 -c && \\
+sudo bash /tmp/secure-deploy.sh ; rm -f /tmp/secure-deploy.sh
+\`\`\`
+
+#### 📄 完整檔案校驗和清單
+| 文件 | SHA256 |
+|------|--------|
 $(for file in "${FILES[@]}"; do
-    checksum=$(get_checksum "$file")
-    echo "| **$file** | \`${checksum}\` | \`shasum -a 256 $file\` |"
+    cs=$(get_checksum "$file")
+    echo "| **$file** | \`${cs}\` |"
 done)
 EOF
 )
@@ -64,20 +79,21 @@ if [ ! -f "$README_FILE" ]; then
     exit 1
 fi
 
-# 更新 README.md 邏輯 (改用 awk 避免 sed 錯誤)
+# 更新 README.md 邏輯：利用 awk 和自訂標籤進行安全替換
 if grep -q "" "$README_FILE"; then
     echo "🔄 偵測到現有區塊，正在更新 README.md..."
-    # 使用 awk 將區塊內容替換，並輸出到臨時文件
-    awk -v new_table="$NEW_TABLE" '
-        // { print new_table; skip=1; next }
+    # 使用 awk 將 START 和 END 標籤之間的內容替換為最新的 NEW_MARKDOWN
+    awk -v new_content="$NEW_MARKDOWN" '
+        BEGIN { skip=0 }
+        // { print new_content; skip=1; next }
         // { skip=0; next }
         !skip { print }
     ' "$README_FILE" > "$README_FILE.tmp" && mv "$README_FILE.tmp" "$README_FILE"
     echo "✅ [成功] README.md 區塊已同步"
 else
     echo "➕ 未發現區塊，正在將校驗和追加至 README.md 末尾..."
-    echo -e "\n$NEW_TABLE" >> "$README_FILE"
-    echo "✅ [成功] 已追加新區塊"
+    echo -e "\n$NEW_MARKDOWN" >> "$README_FILE"
+    echo "✅ [成功] 已追加新區塊 (包含標籤)"
 fi
 
 # 生成 .sha256 檔案

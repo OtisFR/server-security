@@ -26,17 +26,16 @@
 
 ```bash
 # 直接從 GitHub 拉取並執行（自動應用最新版本）
-curl -fsSL https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh | sudo bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh)"
 ```
 
 ### 安全驗證版本（企業推薦）
 
 ```bash
-# 1. 下載腳本
-curl -fsSL -o secure-deploy.sh https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh
-
-# 2. 直接驗證並執行 (不需要 .sha256 檔案)
-echo "7be0333ec58cd4e31d30c50ed51da2ba111eb2bd09f8171cce3e29ea6b6ea6e0  secure-deploy.sh" | shasum -a 256 -c && sudo bash secure-deploy.sh
+# 下載、驗證、執行並自動銷毀腳本 (One-liner 複製貼上即可)
+curl -fsSL -o /tmp/secure-deploy.sh https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh && \
+echo "7be0333ec58cd4e31d30c50ed51da2ba111eb2bd09f8171cce3e29ea6b6ea6e0  /tmp/secure-deploy.sh" | shasum -a 256 -c && \
+sudo bash /tmp/secure-deploy.sh ; rm -f /tmp/secure-deploy.sh
 ```
 
 ---
