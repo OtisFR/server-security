@@ -1,0 +1,15 @@
+read -p "👉 請輸入 Zabbix Server IP (例如 192.168.1.254): " ZBX_IP && \
+read -p "👉 請輸入本機名稱 (例如 vps-ubuntu): " ZBX_HOST && \
+echo "⏳ 開始下載並安裝套件庫..." && \
+wget -q https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_7.0-2+ubuntu24.04_all.deb && \
+sudo dpkg -i zabbix-release_7.0-2+ubuntu24.04_all.deb && \
+echo "⏳ 更新系統並安裝 Zabbix Agent 2..." && \
+sudo apt update && sudo apt install -y zabbix-agent2 && \
+echo "⏳ 正在修改設定檔..." && \
+sudo sed -i "s/^Server=127.0.0.1/Server=$ZBX_IP/g" /etc/zabbix/zabbix_agent2.conf && \
+sudo sed -i "s/^ServerActive=127.0.0.1/ServerActive=$ZBX_IP/g" /etc/zabbix/zabbix_agent2.conf && \
+sudo sed -i "s/^Hostname=Zabbix server/Hostname=$ZBX_HOST/g" /etc/zabbix/zabbix_agent2.conf && \
+echo "⏳ 啟動 Zabbix Agent 2 服務..." && \
+sudo systemctl enable --now zabbix-agent2 && \
+echo -e "\n✅ 搞定！安裝與設定已全數完成！" && \
+echo "📌 目前設定 Server IP: $ZBX_IP | 主機名稱: $ZBX_HOST"
