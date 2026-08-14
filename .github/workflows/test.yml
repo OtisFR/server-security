@@ -3,191 +3,126 @@ name: 腳本驗證與測試
 on:
   push:
     branches: [ main, develop ]
-    paths:
-      - '*.sh'
-      - '.github/workflows/test.yml'
   pull_request:
     branches: [ main, develop ]
-    paths:
-      - '*.sh'
+
+permissions:
+  contents: read
 
 jobs:
-  syntax-check:
-    name: Bash 語法驗證
+  lint:
+    name: 語法與靜態分析
     runs-on: ubuntu-latest
-    
     steps:
     - name: 檢出代碼
-      uses: actions/checkout@v3
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
     - name: 安裝 ShellCheck
       run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-    - name: 驗證 secure-deploy.sh 語法
-      run: bash -n secure-deploy.sh
-
-    - name: 驗證 setup_ssh_jail.sh 語法
-      run: bash -n setup_ssh_jail.sh
-
-    - name: 驗證 tailscale-installer.sh 語法
-      run: bash -n tailscale-installer.sh
-
-    - name: ShellCheck 靜態分析
+    - name: Bash 語法驗證（全部腳本）
       run: |
-        echo "🔍 執行 ShellCheck 靜態分析..."
-        shellcheck -x --severity=warning secure-deploy.sh || true
-        shellcheck -x --severity=warning setup_ssh_jail.sh || true
-        shellcheck -x --severity=warning tailscale-installer.sh || true
-
-  lint-check:
-    name: 程式碼品質檢查
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: 檢出代碼
-      uses: actions/checkout@v3
-
-    - name: 檢查行尾空白
-      run: |
-        echo "🔍 檢查行尾空白..."
-        if grep -r ' $' *.sh; then
-          echo "❌ 發現行尾空白，請移除"
-          exit 1
-        fi
-        echo "✅ 無行尾空白"
-
-    - name: 檢查 Tab 字符
-      run: |
-        echo "🔍 檢查 Tab 字符..."
-        if grep -r $'\t' *.sh; then
-          echo "❌ 發現 Tab 字符，請使用空格"
-          exit 1
-        fi
-        echo "✅ 無 Tab 字符"
-
-    - name: 檢查文件編碼
-      run: |
-        echo "🔍 檢查文件編碼..."
-        for file in *.sh; do
-          encoding=$(file -b --mime-encoding "$file")
-          if [[ "$encoding" != "utf-8" ]]; then
-            echo "❌ $file 編碼為 $encoding，應為 UTF-8"
-            exit 1
-          fi
+        status=0
+        for f in *.sh legacy/*.sh; do
+          echo "🔍 bash -n $f"
+          bash -n "$f" || status=1
         done
-        echo "✅ 所有文件編碼正確"
+        exit $status
 
-  version-check:
-    name: 版本一致性檢查
+    - name: ShellCheck 靜態分析（發佈腳本，強制通過）
+      run: |
+        shellcheck --severity=warning secure-deploy.sh secure_ssh.sh upgrade.sh zabbix-agent2-install.sh update-checksums.sh
+
+  integrity:
+    name: 完整性與一致性檢查
     runs-on: ubuntu-latest
-    
     steps:
     - name: 檢出代碼
-      uses: actions/checkout@v3
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: 驗證 checksums.sha256 與實際檔案一致
+      run: |
+        echo "🔍 sha256sum -c checksums.sha256"
+        sha256sum -c checksums.sha256
+
+    - name: 驗證 README 校驗表與 checksums.sha256 一致
+      run: |
+        echo "🔍 比對 README <!-- CHECKSUMS --> 區塊..."
+        status=0
+        while read -r hash file; do
+          if ! grep -qF "$hash" README.md; then
+            echo "❌ README.md 缺少 $file 的最新校驗和 ($hash)"
+            status=1
+          fi
+        done < checksums.sha256
+        # README 校驗區塊內不得出現 checksums.sha256 以外的雜湊（防止殘留過期值）
+        stale=$(awk '/<!-- CHECKSUMS START -->/{f=1;next} /<!-- CHECKSUMS END -->/{f=0} f' README.md \
+          | grep -oE '[0-9a-f]{64}' | sort -u \
+          | grep -vxF -f <(awk '{print $1}' checksums.sha256) || true)
+        if [ -n "$stale" ]; then
+          echo "❌ README 校驗區塊含有過期/未知的雜湊值:"
+          echo "$stale"
+          status=1
+        fi
+        exit $status
 
     - name: 驗證 VERSION 檔案格式
       run: |
-        echo "🔍 檢查 VERSION 檔案..."
-        if [[ ! -f VERSION ]]; then
-          echo "❌ VERSION 檔案不存在"
-          exit 1
-        fi
-        
-        VERSION=$(cat VERSION)
+        VERSION=$(tr -d '[:space:]' < VERSION)
         if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "❌ VERSION 格式不正確: $VERSION"
-          echo "應為: X.Y.Z (如 1.0.0)"
+          echo "❌ VERSION 格式不正確: '$VERSION'（應為 X.Y.Z）"
           exit 1
         fi
-        
-        echo "✅ VERSION 檢查通過: $VERSION"
-
-  security-scan:
-    name: 安全掃描
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: 檢出代碼
-      uses: actions/checkout@v3
-
-    - name: 檢查危險指令
-      run: |
-        echo "🔍 掃描危險指令..."
-        DANGEROUS_PATTERNS=(
-          "eval "
-          "chmod 777"
-          "sudo -u"
-        )
-        
-        for pattern in "${DANGEROUS_PATTERNS[@]}"; do
-          if grep -r "$pattern" *.sh 2>/dev/null; then
-            echo "⚠️ [警告] 發現潛在危險模式: $pattern"
-          fi
-        done
-        echo "✅ 安全掃描完成"
-
-    - name: 缺少 set -euo pipefail 檢查
-      run: |
-        echo "🔍 檢查 strict mode..."
-        for file in *.sh; do
-          if ! head -n 5 "$file" | grep -q "set -euo pipefail"; then
-            echo "⚠️ [警告] $file 缺少 'set -euo pipefail'"
-          fi
-        done
-        echo "✅ Strict mode 檢查完成"
-
-  readme-check:
-    name: 文檔完整性檢查
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: 檢出代碼
-      uses: actions/checkout@v3
+        echo "✅ VERSION: $VERSION"
 
     - name: 驗證必要文件
       run: |
-        echo "🔍 檢查必要文件..."
-        REQUIRED_FILES=("README.md" "VERSION" "CHANGELOG.md" ".gitignore")
-        
-        for file in "${REQUIRED_FILES[@]}"; do
+        for file in README.md VERSION CHANGELOG.md SECURITY.md .gitignore LICENSE checksums.sha256; do
           if [[ ! -f "$file" ]]; then
             echo "❌ 缺少必要文件: $file"
             exit 1
           fi
-          echo "✅ 檢測到: $file"
         done
+        echo "✅ 必要文件齊全"
 
-    - name: 驗證 README 結構
+  quality:
+    name: 程式碼品質檢查
+    runs-on: ubuntu-latest
+    steps:
+    - name: 檢出代碼
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: 檢查 strict mode
       run: |
-        echo "🔍 檢查 README 結構..."
-        REQUIRED_SECTIONS=("快速開始" "部署模式" "常用管理指令")
-        
-        for section in "${REQUIRED_SECTIONS[@]}"; do
-          if ! grep -q "$section" README.md; then
-            echo "⚠️ [警告] README 缺少 '$section' 章節"
-          else
-            echo "✅ 檢測到: $section"
+        status=0
+        for file in secure-deploy.sh secure_ssh.sh upgrade.sh zabbix-agent2-install.sh update-checksums.sh; do
+          if ! head -n 5 "$file" | grep -q "set -euo pipefail"; then
+            echo "❌ $file 缺少 'set -euo pipefail'"
+            status=1
           fi
         done
+        exit $status
 
-  summary:
-    name: 測試摘要
-    runs-on: ubuntu-latest
-    needs: [syntax-check, lint-check, version-check, security-scan, readme-check]
-    if: always()
-    
-    steps:
-    - name: 生成測試報告
+    - name: 檢查行尾空白與 Tab
       run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✨ CI/CD 驗證完成"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo "📋 測試結果："
-        echo "  - Bash 語法驗證: ${{ needs.syntax-check.result }}"
-        echo "  - 程式碼品質: ${{ needs.lint-check.result }}"
-        echo "  - 版本檢查: ${{ needs.version-check.result }}"
-        echo "  - 安全掃描: ${{ needs.security-scan.result }}"
-        echo "  - 文檔檢查: ${{ needs.readme-check.result }}"
-        echo ""
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        status=0
+        if grep -rn ' $' -- *.sh; then
+          echo "❌ 發現行尾空白"
+          status=1
+        fi
+        if grep -rn $'\t' -- *.sh; then
+          echo "❌ 發現 Tab 字符，請使用空格"
+          status=1
+        fi
+        exit $status
+
+    - name: 檢查危險模式（強制阻擋）
+      run: |
+        status=0
+        for pattern in "eval " "chmod 777" "curl -fsSL[^\"]*\| *(sudo )?bash"; do
+          if grep -rnE "$pattern" -- *.sh; then
+            echo "❌ 發現危險模式: $pattern"
+            status=1
+          fi
+        done
+        exit $status

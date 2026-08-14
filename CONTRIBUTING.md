@@ -75,7 +75,7 @@
 ## 日誌檔案
 ```bash
 # 部署日誌
-sudo tail -50 /var/log/server-secure-deployment.log
+sudo tail -50 /var/log/server-security-deploy.log
 ```
 ```
 
@@ -137,12 +137,12 @@ sudo ufw status numbered
 
 ```bash
 # 1. Fork 這個倉庫
-# 2. Clone 你的 fork
-git clone https://github.com/OtisFR/server-security.git
+# 2. Clone 你的 fork（把 <你的帳號> 換成自己的 GitHub 帳號）
+git clone https://github.com/<你的帳號>/server-security.git
 cd server-security
 
 # 3. 添加上游遠程
-git remote add upstream https://github.com/ORIGINAL_AUTHOR/server-security.git
+git remote add upstream https://github.com/OtisFR/server-security.git
 
 # 4. 創建功能分支
 git checkout -b feature/your-feature-name
@@ -156,11 +156,11 @@ git checkout -b fix/your-bug-fix-name
 # 編輯文件
 nano secure-deploy.sh
 
-# 測試語法
-bash -n secure-deploy.sh
+# 測試語法（全部腳本）
+for f in *.sh; do bash -n "$f"; done
 
-# 靜態分析
-shellcheck -x secure-deploy.sh
+# 靜態分析（與 CI 相同的參數，必須零警告）
+shellcheck --severity=warning secure-deploy.sh secure_ssh.sh upgrade.sh zabbix-agent2-install.sh update-checksums.sh
 
 # 實際測試（在測試環境）
 sudo bash secure-deploy.sh
@@ -171,13 +171,13 @@ sudo bash secure-deploy.sh
 提交前請檢查：
 
 - [ ] ✅ Bash 語法通過 (`bash -n`)
-- [ ] ✅ ShellCheck 無關鍵問題
-- [ ] ✅ 行尾無空白
-- [ ] ✅ 無 Tab 字符（使用空格）
-- [ ] ✅ UTF-8 編碼
+- [ ] ✅ ShellCheck 零警告（`--severity=warning`，CI 強制）
+- [ ] ✅ 行尾無空白、無 Tab 字符（CI 強制）
 - [ ] ✅ 邏輯測試通過
 - [ ] ✅ 更新 CHANGELOG.md
 - [ ] ✅ 更新 VERSION（若有版本變化）
+- [ ] ✅ **修改任何腳本後必須執行 `bash update-checksums.sh --no-git`**
+      （同步 checksums.sha256 與 README 校驗表，否則 CI 的校驗和一致性檢查必定失敗）
 - [ ] ✅ 文檔更新（如適用）
 
 ### 3️⃣ 提交更改
@@ -187,8 +187,11 @@ sudo bash secure-deploy.sh
 git fetch upstream
 git rebase upstream/main
 
+# 同步校驗和（修改過腳本時必要）
+bash update-checksums.sh --no-git
+
 # 提交
-git add .
+git add -A
 git commit -m "fix: 修復 IPv6 禁用邏輯 (#123)"
 
 # 推送到你的 fork
@@ -414,10 +417,12 @@ git commit -m "fixed stuff"
 
 ## 📊 審查流程
 
-1. **自動檢查** (✅ 必需通過)
-   - Bash 語法驗證
-   - ShellCheck 靜態分析
-   - 文件編碼檢查
+1. **自動檢查** (✅ 必需通過，見 .github/workflows/test.yml)
+   - Bash 語法驗證（全部腳本，含 legacy/）
+   - ShellCheck 靜態分析（`--severity=warning`，強制）
+   - 校驗和一致性（checksums.sha256 ↔ 實際檔案 ↔ README 校驗表）
+   - VERSION 格式與必要文件檢查
+   - strict mode、行尾空白/Tab、危險模式檢查
 
 2. **人工審查** (⏳ 1-3 天)
    - 代碼質量

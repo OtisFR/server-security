@@ -1,324 +1,149 @@
 # 安裝與部署指南
 
-完整的伺服器安全加固工具部署指南。
-
----
-
-## 📖 目錄
-
-1. [前置條件](#前置條件)
-2. [快速安裝](#快速安裝)
-3. [詳細設定](#詳細設定)
-4. [後續驗證](#後續驗證)
-5. [常見問題](#常見問題)
+伺服器安全加固工具 v2.0 的完整部署指南。
 
 ---
 
 ## 前置條件
 
-### 系統要求
-
-```bash
-✓ 作業系統: Ubuntu 24.04 LTS (推薦)
-  ✓ 也支援其他 Debian 系統 (Ubuntu 22.04, 20.04, Debian 12 等)
-✓ 根權限: root 或 sudo 無密碼設定
-✓ 網路連線: 公網連線（下載 Tailscale）
-✓ 磁碟空間: ≥ 200MB 可用空間
+```
+✓ 作業系統: Ubuntu 24.04 LTS（推薦），其他 Debian 系（22.04 / Debian 12）大致相容
+✓ 權限:    可執行 sudo 的帳號（互動輸入密碼即可，無需 NOPASSWD）
+✓ 網路:    公網連線（下載套件與 Tailscale）
+✓ 終端機:  互動式 TTY（腳本不支援 curl | bash 管線執行）
 ```
 
-### 帳戶權限
+### 網路連通性檢查
 
 ```bash
-# 檢查是否可不輸密碼執行 sudo
-sudo -n true && echo "✅ 無密碼 sudo 已設定" || echo "❌ 需要 sudo 密碼"
-
-# 若需設定無密碼 sudo
-sudo EDITOR=nano visudo
-# 添加此行 (OtisFR 替換實際用戶名)
-# OtisFR ALL=(ALL) NOPASSWD:ALL
-```
-
-### 網路連接性檢查
-
-```bash
-# 測試公網連線
 ping -c 3 8.8.8.8
-
-# 測試 GitHub 連線
 curl -I https://github.com
-
-# 測試 Tailscale 服務可達性
 curl -I https://login.tailscale.com
 ```
 
 ---
 
-## 快速安裝
+## 安裝方式
 
-### 方法 1: 直接執行（推薦新用戶）
-
-```bash
-# 最簡單的方式 - 直接從 GitHub 拉取執行
-curl -fsSL https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh | sudo bash
-
-# 完成後會出現互動式菜單，選擇所需模式
-```
-
-### 方法 2: 下載後執行（推薦企業）
+### 方法 1：下載 + 驗證 + 執行（推薦）
 
 ```bash
-# 1. 下載腳本
-curl -fsSL -o secure-deploy.sh https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh
+# 1. 下載腳本與校驗檔（secure_ssh.sh 供步驟 5 的 SSH 金鑰強化使用）
+curl -fsSL -O https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh
+curl -fsSL -O https://raw.githubusercontent.com/OtisFR/server-security/main/secure_ssh.sh
+curl -fsSL -O https://raw.githubusercontent.com/OtisFR/server-security/main/checksums.sha256
 
-# 2. 驗證檔案（可選但推薦）
-curl -fsSL -o secure-deploy.sh.sha256 https://raw.githubusercontent.com/OtisFR/server-security/main/secure-deploy.sh.sha256
-sha256sum -c secure-deploy.sh.sha256
+# 2. 驗證完整性（必須看到每個檔案 OK）
+sha256sum --ignore-missing -c checksums.sha256
 
 # 3. 執行
 sudo bash secure-deploy.sh
 ```
 
-### 方法 3: 克隆整個倉庫（開發者推薦）
+### 方法 2：克隆倉庫（開發者）
 
 ```bash
-# 1. 克隆倉庫
 git clone https://github.com/OtisFR/server-security.git
 cd server-security
-
-# 2. 檢查可用版本
-cat VERSION
-
-# 3. 執行
+sha256sum -c checksums.sha256   # 驗證
 sudo bash secure-deploy.sh
 ```
 
 ---
 
-## 詳細設定
+## 部署流程說明
 
-### 步驟 1: 選擇部署模式
-
-執行脚本後，會看到以下菜單：
+### 步驟 1：選擇配置
 
 ```
-╔═══════════════════════════════════════════════════════╗
-║   伺服器安全加固工具 (Tailscale + UFW + Fail2Ban)   ║
-╚═══════════════════════════════════════════════════════╝
-
-請選擇安裝模式：
-
-  【標準模式】(允許公網 SSH)
-  1️⃣  基本 Tailscale 版 (無防火牆)
-  2️⃣  安全強化版 (啟用 UFW)
-  3️⃣  Exit Node 版 (啟用 UFW + 轉發)
-
-  【零信任模式】(禁止公網 SSH)
-  4️⃣  零信任安全版 (內網 SSH 限制)
-  5️⃣  零信任 Exit Node 版 (內網 SSH + 轉發)
-
-  q   退出
-
-💬 [輸入] 請選擇選項 [1/2/3/4/5/q]: 
+  1️⃣  基礎防護   UFW + Fail2Ban（公網 SSH 保持開放）
+  2️⃣  標準加固   基礎防護 + Tailscale VPN（公網 SSH 保持開放）
+  3️⃣  零信任隔離 標準加固 + SSH 僅限 Tailscale 內網連入
 ```
 
 **選擇建議：**
-- **新上線伺服器**: 選 2️⃣ (最均衡)
-- **高安全需求**: 選 4️⃣ (極致隔離)
-- **需要路由轉發**: 選 3️⃣ 或 5️⃣
 
-### 步驟 2: IPv6 禁用
+- 沒有 VPN 需求 → `1`
+- 新伺服器、想先熟悉 Tailscale → `2`（之後可重跑選 `3` 收緊）
+- 生產環境、要求最高安全性 → `3`
 
-```
-💬 [輸入] 是否徹底禁用 IPv6 以減少潛在攻擊面？ (y/n):
-```
+### 步驟 2：附加選項（依配置詢問）
 
-**推薦選擇:** `y` (針對純 IPv4 環境)
+- **停用 IPv6**：純 IPv4 環境建議 `y`。腳本會先檢查你目前的連線是否走 IPv6（是的話會警告），且只有在核心層確認停用成功後才會關閉 UFW 的 IPv6 過濾
+- **Exit Node**（配置 2/3）：需要出口節點路由時選 `y`，完成後記得到 [Tailscale 管理頁](https://login.tailscale.com/admin/machines) 啟用
 
-- ✅ **選 y**: 系統與防火牆雙層禁用 IPv6
-- ❌ **選 n**: 保持 IPv6 啟用（不常用）
+### 步驟 3：Tailscale 認證（配置 2/3）
 
-### 步驟 3: Fail2Ban 白名單設定
+畫面出現認證網址後，複製到瀏覽器完成登入。**零信任配置會等 Tailscale 驗證成功後才封鎖公網 SSH**，認證失敗時防火牆不會有任何變更。
 
-腳本會自動檢測當前 SSH 連線 IP：
+### 步驟 4：Fail2Ban 白名單
 
-```
-📍 [偵測] 偵測到您的 SSH 連線 IP: 203.0.113.100
-💬 [輸入] 是否將此 IP 加入白名單？ (y/n):
-```
+腳本會偵測你目前的連線 IP 並詢問是否加入白名單（建議 `y`），也可輸入其他 IP/CIDR（逗號分隔，格式會逐一驗證）。
 
-**推薦選擇:** `y` (保護自己免被封鎖)
+### 步驟 5：SSH 金鑰強化（建議）
 
-然後會提示額外 IP：
+部署完成後：
 
-```
-💬 [輸入] 請輸入其他要加入白名單的 IP/CIDR (用逗號隔開):
-```
-
-**範例輸入：**
-```
-203.0.113.50/32, 203.0.113.0/24, 2001:db8::1/128
-```
-
-### 步驟 4: Tailscale 認證
-
-腳本會出現：
-
-```
-════════════════════════════════════════════════════════
- 🔐 [安全] 請完成 Tailscale 認證
-════════════════════════════════════════════════════════
-
-⏳ [等待] 正在啟動 Tailscale 登入流程...
-📱 [操作] 請複製下方網址到瀏覽器中完成認證：
-
-https://login.tailscale.com/a/XXXXXXXXXXXXX
-```
-
-**操作步驟：**
-1. 複製上述 URL 到瀏覽器
-2. 使用 Google/GitHub/Microsoft 帳號登入
-3. 確認裝置添加
-4. 等待腳本完成（通常 10-30 秒）
-
-### 步驟 5: 部署完成
-
-待腳本完成，會顯示摘要：
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- ✨ 部署與加固完成！
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 [摘要] 部署狀態
-   - 安裝模式: 安全強化版
-   
-⚙️ [狀態] 服務運行狀態
-   - Tailscale: ✅ [運行中] (IP: 100.100.100.50)
-   - Fail2Ban:  ✅ [運行中]
-   - UFW 防火牆: active
+```bash
+# 先確認一般使用者的 ~/.ssh/authorized_keys 已放好公鑰
+sudo bash secure_ssh.sh
 ```
 
 ---
 
 ## 後續驗證
 
-### 建立完成後立即檢查
-
 ```bash
-# 1. 檢查 Tailscale 連線
-tailscale status
-# 應看到類似：
-# 100.100.100.50    your-server              your-account@...   linux
-
-# 2. 查看 Tailscale IP
-tailscale ip -4
-# 應出現類似: 100.100.100.50
-
-# 3. 檢查 Fail2Ban 狀態
-sudo fail2ban-client status sshd
-# 應看到:
-# Status for the jail sshd:
-# |- Filter set to sshd
-# |- Currently failed: 0
-# |- Currently banned: 0
-# `- Total banned: 0
-
-# 4. 檢查 UFW 防火牆
-sudo ufw status verbose
-# 應看到:
-# Status: active
-```
-
-### 長期監控
-
-```bash
-# 每日查看 Fail2Ban 日誌
-sudo tail -20 /var/log/fail2ban/fail2ban.log
-
-# 監控被封鎖 IP (實時)
-watch -n 5 'sudo fail2ban-client status sshd'
-
-# 檢查部署日誌
-sudo tail -f /var/log/server-secure-deployment.log
+tailscale status                      # Tailscale 連線
+sudo fail2ban-client status sshd      # Fail2Ban 狀態
+sudo ufw status verbose               # 防火牆規則
+sudo sshd -T | grep -iE 'passwordauthentication|port'   # SSH 有效設定
+sudo tail -f /var/log/server-security-deploy.log        # 部署日誌
 ```
 
 ---
 
 ## 常見問題
 
-### Q1: 執行後無法 SSH 連線
+### Q1: 零信任配置後無法 SSH 連線
 
-**原因**: 可能是 UFW 規則配置問題
+透過主機商 Console 登入後：
 
-**解決方案**:
 ```bash
-# 從本機控制台或 Tailscale 連線：
-
-# 臨時禁用 UFW
 sudo ufw disable
-
-# 查看規則並刪除問題規則
-sudo ufw status numbered
-sudo ufw delete <NUMBER>
-
-# 重新啟用
+sudo ufw status numbered   # 檢查規則
 sudo ufw enable
 ```
 
-### Q2: Tailscale 無法連線
+### Q2: 被 Fail2Ban 誤封
 
-**原因**: 可能是服務未啟動或網路問題
-
-**解決方案**:
 ```bash
-# 檢查服務狀態
-sudo systemctl status tailscaled
-
-# 查看日誌
-sudo journalctl -u tailscaled -n 50
-
-# 重啟服務
-sudo systemctl restart tailscaled
-
-# 重新認證
-sudo tailscale logout
-sudo tailscale up
+sudo fail2ban-client set sshd unbanip <你的IP>
+# 永久白名單：編輯 /etc/fail2ban/jail.local 的 ignoreip，然後
+sudo systemctl restart fail2ban
 ```
 
-### Q3: 被 Fail2Ban 誤封
+### Q3: SSH 加固後想還原密碼登入
 
-**原因**: 登入失敗超過限制
-
-**解決方案**:
 ```bash
-# 查看被封 IP
-sudo fail2ban-client status sshd
-
-# 解除封鎖
-sudo fail2ban-client set sshd unbanip 203.0.113.100
-
-# 永久白名單
-sudo nano /etc/fail2ban/jail.local
-# 編輯 ignoreip 行，加上你的 IP
-sudo systemctl restart fail2ban
+sudo rm /etc/ssh/sshd_config.d/00-hardening.conf
+sudo systemctl restart ssh
 ```
 
 ### Q4: 升級到新版本
 
-**解決方案**:
 ```bash
-# 自動升級
-curl -fsSL https://raw.githubusercontent.com/OtisFR/server-security/main/upgrade.sh | sudo bash
+curl -fsSL -O https://raw.githubusercontent.com/OtisFR/server-security/main/upgrade.sh
+curl -fsSL -O https://raw.githubusercontent.com/OtisFR/server-security/main/checksums.sha256
+sha256sum --ignore-missing -c checksums.sha256
+sudo bash upgrade.sh
 ```
 
 ### Q5: 回復到舊版本
 
-**解決方案**:
 ```bash
-# 列出備份
 ls -la /opt/server-security/backups/
-
-# 恢復特定備份
-sudo cp /opt/server-security/backups/backup_20260325_150000/secure-deploy.sh.bak /opt/server-security/secure-deploy.sh
+sudo cp /opt/server-security/backups/backup_<時間戳>/secure-deploy.sh.bak /opt/server-security/secure-deploy.sh
 ```
 
 ---
@@ -328,47 +153,26 @@ sudo cp /opt/server-security/backups/backup_20260325_150000/secure-deploy.sh.bak
 ### 本地測試
 
 ```bash
-# 語法驗證
-bash -n secure-deploy.sh
-bash -n setup_ssh_jail.sh
-bash -n tailscale-installer.sh
-
-# ShellCheck 靜態分析
-shellcheck -x secure-deploy.sh
+# 語法驗證 + 靜態分析（CI 也會強制執行）
+for f in *.sh; do bash -n "$f"; done
+shellcheck --severity=warning secure-deploy.sh secure_ssh.sh upgrade.sh zabbix-agent2-install.sh update-checksums.sh
 ```
 
 ### 提交變更
 
 ```bash
-# 1. 修改腳本
-# 2. 執行本地測試
-# 3. 更新 VERSION 檔案
-# 4. 更新 CHANGELOG.md
-# 5. 提交
-
-git add .
-git commit -m "fix: 修復 IPv6 禁用邏輯"
-git push origin main
-```
-
-### 計算檔案哈希（安全驗證）
-
-```bash
-# 生成 SHA256 哈希
-sha256sum secure-deploy.sh > secure-deploy.sh.sha256
-
-# 驗證
-sha256sum -c secure-deploy.sh.sha256
+# 1. 修改腳本並通過本地測試
+# 2. 更新 VERSION 與 CHANGELOG.md
+# 3. 重新產生校驗和（會同步 checksums.sha256 與 README 校驗表）
+bash update-checksums.sh --no-git
+# 4. 提交（CI 會驗證校驗和一致性）
+git add -A && git commit -m "feat: ..." && git push
 ```
 
 ---
 
 ## 📞 支援與回報
 
-- 🐛 **遇到 Bug**: 開設 [GitHub Issue](https://github.com/OtisFR/server-security/issues)
-- 💡 **功能建議**: 提交 [GitHub Discussion](https://github.com/OtisFR/server-security/discussions)
-- 🔧 **貢獻代碼**: 發送 [Pull Request](https://github.com/OtisFR/server-security/pulls)
-
----
-
-**最後更新**: 2026-03-26
+- 🐛 Bug：[GitHub Issues](https://github.com/OtisFR/server-security/issues)
+- 🔐 安全性弱點：見 [SECURITY.md](SECURITY.md)
+- 🔧 貢獻：[Pull Requests](https://github.com/OtisFR/server-security/pulls)

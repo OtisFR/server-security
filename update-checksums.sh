@@ -3,205 +3,174 @@
 set -euo pipefail
 
 # ============================================================================
-# 自動計算腳本校驗和並更新 README.md (macOS 專用穩定版)
+# 校驗和更新工具 v2.0（macOS / Linux 通用）
+#
+# 功能：
+#   1. 計算所有發佈腳本的 SHA256
+#   2. 更新 checksums.sha256
+#   3. 以 <!-- CHECKSUMS START/END --> 標記安全地更新 README.md 的校驗表
+#      （v1 的標記字串遺失導致 awk 空樣式會毀掉整份 README，v2 已修復並加上
+#        替換後的完整性檢查）
+#
+# 用法：
+#   bash update-checksums.sh            # 更新檔案，之後詢問是否 git commit/push
+#   bash update-checksums.sh --no-git   # 只更新檔案，跳過 git 操作
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 README_FILE="$SCRIPT_DIR/README.md"
-GIT_DIR="$(git -C "$SCRIPT_DIR" rev-parse --git-dir 2>/dev/null)" && GIT_DIR="$(dirname "$GIT_DIR")" || GIT_DIR=""
+SHA256_FILE="$SCRIPT_DIR/checksums.sha256"
 
-# 要檢查的文件
-FILES=("secure-deploy.sh" "setup_ssh_jail.sh" "tailscale-installer.sh")
-GITHUB_RAW_BASE="https://raw.githubusercontent.com/OtisFR/server-security/main"
+MARKER_START='<!-- CHECKSUMS START -->'
+MARKER_END='<!-- CHECKSUMS END -->'
 
-# 檢查所有文件是否存在
+# 發佈的腳本清單（新增腳本時記得同步更新）
+FILES=("secure-deploy.sh" "secure_ssh.sh" "upgrade.sh" "zabbix-agent2-install.sh" "update-checksums.sh")
+
+NO_GIT=0
+if [ "${1:-}" = "--no-git" ]; then
+    NO_GIT=1
+fi
+
+# sha256 指令（macOS: shasum；Linux: sha256sum）
+sha256_of() {
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
 for file in "${FILES[@]}"; do
     if [ ! -f "$SCRIPT_DIR/$file" ]; then
-        echo "❌ [錯誤] 找不到文件: $file"
+        echo "❌ [錯誤] 找不到檔案: $file"
         exit 1
     fi
 done
+if [ ! -f "$README_FILE" ]; then
+    echo "❌ [錯誤] 找不到 README.md"
+    exit 1
+fi
 
+# ============================================================================
+# 1. 計算校驗和
+# ============================================================================
 echo "📝 計算 SHA256 校驗和..."
 echo ""
 
-# 計算校驗和並存儲
-CHECKSUMS_LIST=()
+declare -a NAMES=()
+declare -a HASHES=()
 for file in "${FILES[@]}"; do
-    checksum=$(cd "$SCRIPT_DIR" && shasum -a 256 "$file" | awk '{print $1}')
-    CHECKSUMS_LIST+=("$file:$checksum")
+    checksum=$(cd "$SCRIPT_DIR" && sha256_of "$file")
+    NAMES+=("$file")
+    HASHES+=("$checksum")
     echo "✅ $file"
     echo "   $checksum"
 done
 
-# 提取校驗和的輔助函數
-get_checksum() {
-    local file=$1
-    for item in "${CHECKSUMS_LIST[@]}"; do
-        if [[ "$item" == "$file:"* ]]; then
-            echo "${item#*:}"
-            return
-        fi
-    done
-}
-
+# ============================================================================
+# 2. 寫入 checksums.sha256（sha256sum -c 可直接使用的格式）
+# ============================================================================
+: > "$SHA256_FILE"
+for i in "${!NAMES[@]}"; do
+    echo "${HASHES[$i]}  ${NAMES[$i]}" >> "$SHA256_FILE"
+done
 echo ""
-echo "📄 更新 README.md 和 checksums.sha256..."
+echo "✅ 已更新: $SHA256_FILE"
 
-# 取得 secure-deploy.sh 的最新 checksum
-SECURE_CS=$(get_checksum "secure-deploy.sh")
-
-# 生成要寫入的 Markdown 內容 (包含標籤、One-liner 區塊與表格)
-# 注意：使用 HTML 註解作為替換的定位點
-NEW_MARKDOWN=$(cat <<EOF
-### 🛡️ 安全驗證版本（企業推薦）
-
-\`\`\`bash
-# 下載、驗證、執行並自動銷毀 (One-liner 複製貼上即可)
-curl -fsSL -o /tmp/secure-deploy.sh $GITHUB_RAW_BASE/secure-deploy.sh && \\
-echo "$SECURE_CS  /tmp/secure-deploy.sh" | shasum -a 256 -c && \\
-sudo bash /tmp/secure-deploy.sh ; rm -f /tmp/secure-deploy.sh
-\`\`\`
-
-#### 📄 完整檔案校驗和清單
-| 文件 | SHA256 |
-|------|--------|
-$(for file in "${FILES[@]}"; do
-    cs=$(get_checksum "$file")
-    echo "| **$file** | \`${cs}\` |"
-done)
-EOF
-)
-
-# 確保 README.md 存在
-if [ ! -f "$README_FILE" ]; then
-    echo "❌ [錯誤] 找不到 README.md: $README_FILE"
+# ============================================================================
+# 3. 更新 README.md 標記區塊
+# ============================================================================
+if ! grep -qF "$MARKER_START" "$README_FILE" || ! grep -qF "$MARKER_END" "$README_FILE"; then
+    echo "❌ [錯誤] README.md 缺少 $MARKER_START / $MARKER_END 標記，不做任何修改"
     exit 1
 fi
 
-# 更新 README.md 邏輯：利用 awk 和自訂標籤進行安全替換
-if grep -q "" "$README_FILE"; then
-    echo "🔄 偵測到現有區塊，正在更新 README.md..."
-    # 使用 awk 將 START 和 END 標籤之間的內容替換為最新的 NEW_MARKDOWN
-    awk -v new_content="$NEW_MARKDOWN" '
-        BEGIN { skip=0 }
-        // { print new_content; skip=1; next }
-        // { skip=0; next }
-        !skip { print }
-    ' "$README_FILE" > "$README_FILE.tmp" && mv "$README_FILE.tmp" "$README_FILE"
-    echo "✅ [成功] README.md 區塊已同步"
-else
-    echo "➕ 未發現區塊，正在將校驗和追加至 README.md 末尾..."
-    echo -e "\n$NEW_MARKDOWN" >> "$README_FILE"
-    echo "✅ [成功] 已追加新區塊 (包含標籤)"
+# 標記必須各恰好一個，且 START 在 END 之前（順序顛倒會讓替換靜默吃掉後續內容）
+start_count=$(grep -cF "$MARKER_START" "$README_FILE")
+end_count=$(grep -cF "$MARKER_END" "$README_FILE")
+start_line=$(grep -nF "$MARKER_START" "$README_FILE" | head -1 | cut -d: -f1)
+end_line=$(grep -nF "$MARKER_END" "$README_FILE" | head -1 | cut -d: -f1)
+if [ "$start_count" -ne 1 ] || [ "$end_count" -ne 1 ] || [ "$start_line" -ge "$end_line" ]; then
+    echo "❌ [錯誤] 標記數量或順序異常 (START×$start_count@L$start_line, END×$end_count@L$end_line)，不做任何修改"
+    exit 1
 fi
 
-# 生成 .sha256 檔案
-SHA256_FILE="$SCRIPT_DIR/checksums.sha256"
-: > "$SHA256_FILE"
-for item in "${CHECKSUMS_LIST[@]}"; do
-    file="${item%%:*}"
-    checksum="${item##*:}"
-    echo "$checksum  $file" >> "$SHA256_FILE"
-done
-echo "✅ 已更新驗證檔: $SHA256_FILE"
+# 產生新的標記區塊內容（含標記本身）
+BLOCK_FILE=$(mktemp)
+# shellcheck disable=SC2064  # 蓄意在此展開路徑：mktemp 路徑此後不變
+trap "rm -f '$BLOCK_FILE'" EXIT
+{
+    echo "$MARKER_START"
+    echo "| 文件 | SHA256 |"
+    echo "|------|--------|"
+    for i in "${!NAMES[@]}"; do
+        echo "| **${NAMES[$i]}** | \`${HASHES[$i]}\` |"
+    done
+    echo "$MARKER_END"
+} > "$BLOCK_FILE"
 
-# ============================================================================
-# Git 互動操作
-# ============================================================================
+# 以明確的標記樣式替換區塊（標記外的內容一律原樣保留）
+TMP_README=$(mktemp)
+awk -v start="$MARKER_START" -v end="$MARKER_END" -v blockfile="$BLOCK_FILE" '
+    index($0, start) {
+        while ((getline line < blockfile) > 0) print line
+        close(blockfile)
+        skip = 1
+        next
+    }
+    index($0, end) { skip = 0; next }
+    !skip { print }
+' "$README_FILE" > "$TMP_README"
 
-if [ -z "$GIT_DIR" ]; then
-    echo "⚠️ [警告] 不在 Git 倉庫中，略過 Git 操作"
-    exit 0
+# 完整性檢查：替換後必須仍各有一個標記，且非標記內容行數不變
+count_start=$(grep -cF "$MARKER_START" "$TMP_README")
+count_end=$(grep -cF "$MARKER_END" "$TMP_README")
+if [ "$count_start" -ne 1 ] || [ "$count_end" -ne 1 ]; then
+    echo "❌ [錯誤] 替換後標記數量異常 (START=$count_start, END=$count_end)，已放棄修改"
+    rm -f "$TMP_README"
+    exit 1
+fi
+outside_before=$(awk -v s="$MARKER_START" -v e="$MARKER_END" 'index($0,s){skip=1;next} index($0,e){skip=0;next} !skip{n++} END{print n+0}' "$README_FILE")
+outside_after=$(awk -v s="$MARKER_START" -v e="$MARKER_END" 'index($0,s){skip=1;next} index($0,e){skip=0;next} !skip{n++} END{print n+0}' "$TMP_README")
+if [ "$outside_before" -ne "$outside_after" ]; then
+    echo "❌ [錯誤] 標記區塊外的內容行數改變 ($outside_before → $outside_after)，已放棄修改"
+    rm -f "$TMP_README"
+    exit 1
 fi
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🔧 Git 操作"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
+# 以 cat 覆寫內容保留原檔 inode 與權限（mv 會帶入 mktemp 的 0600 權限）
+cat "$TMP_README" > "$README_FILE"
+rm -f "$TMP_README"
+echo "✅ 已更新: README.md 校驗和區塊"
 
-cd "$SCRIPT_DIR"
-GIT_STATUS=$(git status --porcelain 2>/dev/null || echo "")
-
-if [ -z "$GIT_STATUS" ]; then
-    echo "✅ [信息] 工作目錄清潔，無新變更需要 Commit"
-    # 如果只是想單純 Push，可以繼續執行
-else
-    echo "📝 檢測到的本地更改："
-    echo "$GIT_STATUS" | sed 's/^/   /'
+# ============================================================================
+# 4. Git 操作（可選）
+# ============================================================================
+if [ "$NO_GIT" -eq 1 ] || [ ! -t 0 ]; then
     echo ""
+    echo "✨ 完成（未執行 git 操作）"
+    exit 0
 fi
 
-read -p "💬 [輸入] 是否要進行 Git 操作？ (y/n): " git_proceed
-if [[ ! "$git_proceed" =~ ^[Yy]$ ]]; then
-    echo "⏭️ [跳過] 已取消 Git 操作"
+if ! git -C "$SCRIPT_DIR" rev-parse --git-dir &> /dev/null; then
+    echo "⚠️ [提示] 不在 Git 倉庫中，略過 git 操作"
     exit 0
 fi
 
 echo ""
-echo "🔀 選擇 Git 操作方式："
-echo "  1) 直接推送 (git push)"
-echo "  2) 合併分支後推送 (git merge)"
-echo "  3) 僅 Commit，不推送"
-echo "  4) 🔥 強制覆蓋 GitHub (以本地檔案為準，完全覆蓋遠端)"
-echo "  q) 取消"
+git -C "$SCRIPT_DIR" status --short
 echo ""
-read -p "💬 [輸入] 請選擇 [1/2/3/4/q]: " git_choice
+read -r -p "💬 [輸入] 是否 commit 並 push？ (y/n): " git_proceed
+if [[ ! "$git_proceed" =~ ^[Yy]$ ]]; then
+    echo "⏭️ 已跳過 git 操作"
+    exit 0
+fi
 
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-case "$git_choice" in
-    1)
-        git add -A
-        read -p "💬 [輸入] 提交訊息 (預設: 'chore: update checksums'): " commit_msg
-        commit_msg="${commit_msg:-chore: update checksums}"
-        git commit -m "$commit_msg" || echo "ℹ️ 無新變更可提交"
-        git push origin "$CURRENT_BRANCH"
-        ;;
-    2)
-        read -p "💬 [輸入] 來源分支 (預設: develop): " source_branch
-        source_branch="${source_branch:-develop}"
-        git add -A
-        read -p "💬 [輸入] 提交訊息: " commit_msg
-        commit_msg="${commit_msg:-merge: update checksums from $source_branch}"
-        git commit -m "$commit_msg" || echo "ℹ️ 無新變更"
-        git merge "$source_branch" --no-edit
-        git push origin "$CURRENT_BRANCH"
-        ;;
-    3)
-        git add -A
-        read -p "💬 [輸入] 提交訊息: " commit_msg
-        commit_msg="${commit_msg:-chore: update checksums}"
-        git commit -m "$commit_msg" || echo "ℹ️ 無新變更"
-        echo "✅ [成功] Commit 已建立"
-        ;;
-    4)
-        echo ""
-        echo "🚨 [警告] 即將進行強制推送 (Force Push)！"
-        read -p "⚠️  你確定要完全以本地端覆蓋遠端 GitHub 嗎？ (y/n): " confirm_force
-        if [[ "$confirm_force" =~ ^[Yy]$ ]]; then
-            git add -A
-            read -p "💬 [輸入] 提交訊息: " commit_msg
-            commit_msg="${commit_msg:-chore: force sync local state to remote}"
-            git commit -m "$commit_msg" || echo "ℹ️ 無新變更"
-            echo "🚀 強制推送到分支: $CURRENT_BRANCH ..."
-            git push origin "$CURRENT_BRANCH" --force
-            echo "✅ [成功] GitHub 已被覆蓋"
-        else
-            echo "⏭️ 操作取消"
-        fi
-        ;;
-    q)
-        exit 0
-        ;;
-    *)
-        echo "❌ 無效選項"
-        exit 1
-        ;;
-esac
-
+read -r -p "💬 [輸入] 提交訊息 (預設: 'chore: update checksums'): " commit_msg
+commit_msg="${commit_msg:-chore: update checksums}"
+git -C "$SCRIPT_DIR" add -A
+git -C "$SCRIPT_DIR" commit -m "$commit_msg" || echo "ℹ️ 無新變更可提交"
+git -C "$SCRIPT_DIR" push origin "$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD)"
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✨ 任務完成！"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✨ 完成！"

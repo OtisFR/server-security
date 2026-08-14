@@ -33,6 +33,17 @@ Thumbs.db
 .env.local
 secrets/
 credentials
+credentials.*
+*.pem
+*.key
+*.psk
+*.ppk
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*tskey*
+authorized_keys
+known_hosts
 
 # Bash 歷史記錄
 .bash_history
